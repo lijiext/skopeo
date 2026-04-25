@@ -2,7 +2,21 @@
 name: build-binaries
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      build_set:
+        description: Which refs to build?
+        type: choice
+        required: true
+        default: current
+        options:
+          - current
+          - trio
+      ref:
+        description: Git ref to build when build_set=current (tag/branch/SHA). Leave empty to use the selected ref.
+        type: string
+        required: false
+        default: ""
   push:
     tags:
       - "v*"
@@ -12,27 +26,37 @@ permissions:
 
 jobs:
   build:
-    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    name: build ${{ matrix.ref }} ${{ matrix.goos }}/${{ matrix.arch_suffix }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        ref: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.event.inputs.build_set == 'trio' && '["v1.9.5","v1.18.2","v1.22.2"]' || format('["{0}"]', (github.event_name == 'workflow_dispatch' && github.event.inputs.ref != '' && github.event.inputs.ref || github.ref_name))) }}
+        arch:
+          - amd64
+          - arm64
+          - armv7
         include:
-          - goos: linux
+          - arch: amd64
+            goos: linux
             goarch: amd64
             goarm: ""
             arch_suffix: amd64
-          - goos: linux
+          - arch: arm64
+            goos: linux
             goarch: arm64
             goarm: ""
             arch_suffix: arm64
-          - goos: linux
+          - arch: armv7
+            goos: linux
             goarch: arm
             goarm: "7"
             arch_suffix: armv7
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -51,14 +75,14 @@ jobs:
       - name: Collect binary
         run: |
           mkdir -p dist
-          cp "bin/skopeo.${{ matrix.goos }}.${{ matrix.goarch }}" "dist/skopeo-${{ matrix.goos }}-${{ matrix.arch_suffix }}"
-          chmod +x "dist/skopeo-${{ matrix.goos }}-${{ matrix.arch_suffix }}"
+          cp "bin/skopeo.${{ matrix.goos }}.${{ matrix.goarch }}" "dist/skopeo-${{ matrix.ref }}-${{ matrix.goos }}-${{ matrix.arch_suffix }}"
+          chmod +x "dist/skopeo-${{ matrix.ref }}-${{ matrix.goos }}-${{ matrix.arch_suffix }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: skopeo-${{ matrix.goos }}-${{ matrix.arch_suffix }}
-          path: dist/skopeo-${{ matrix.goos }}-${{ matrix.arch_suffix }}
+          name: skopeo-${{ matrix.ref }}-${{ matrix.goos }}-${{ matrix.arch_suffix }}
+          path: dist/skopeo-${{ matrix.ref }}-${{ matrix.goos }}-${{ matrix.arch_suffix }}
           if-no-files-found: error
 
   release:
